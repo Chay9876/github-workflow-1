@@ -1,174 +1,46 @@
-name: CI
-
+name: React Project Artifact
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+    # schedule:
+    #   - cron: "*/5 * * * *" # execute after every 5 minutes
 
-env:
-  NODE_VERSION: '20'
-
+    workflow_dispatch: # execute your job manually from Github
+    push:
+        branches:
+            - main
 jobs:
-  build-and-test:
-    name: Install, Test, Build
-    runs-on: ubuntu-latest
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v5
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+            - name: Set up Node Js Environment
+              uses: actions/setup-node@v6
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
+            - name: Install Dependencies
+              run: npm install 
 
-      # ─────────────────────────────────────────
-      # Detect repo layout: monorepo (client/server) vs single package.json
-      # ─────────────────────────────────────────
-      - name: Detect project structure
-        id: detect
-        run: |
-          if [ -f "client/package.json" ] && [ -f "server/package.json" ]; then
-            echo "layout=monorepo" >> "$GITHUB_OUTPUT"
-          else
-            echo "layout=single" >> "$GITHUB_OUTPUT"
-          fi
-          echo "Detected layout: $(cat $GITHUB_OUTPUT | tail -n1)"
+            # - name: Run tests
+            #   run: npm test
 
-      # ─────────────────────────────────────────
-      # MONOREPO PATH: client
-      # ─────────────────────────────────────────
-      - name: Install client dependencies
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./client
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
-
-      - name: Test client
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./client
-        run: |
-          if npm run | grep -q " test"; then
-            npm run test -- --run
-          else
-            echo "No test script found in client, skipping."
-          fi
-
-      - name: Build client
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./client
-        run: |
-          if npm run | grep -q " build"; then
-            npm run build
-          else
-            echo "No build script found in client, skipping."
-          fi
-
-      # DEBUG: shows exactly what got produced, and where, in the Actions log.
-      # If the upload step below comes up empty, check this step's output
-      # to see the real folder name and update the `path:` below to match.
-      - name: List client output (debug)
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./client
-        run: ls -la . && (ls -la dist 2>/dev/null || echo "no dist/ here")
-
-      - name: Upload client build artifact
-        if: steps.detect.outputs.layout == 'monorepo'
-        uses: actions/upload-artifact@v4
-        with:
-          name: client-dist
-          # Path is relative to the repo root (GITHUB_WORKSPACE), NOT to
-          # the working-directory used above. Covers the common Vite/CRA
-          # output folder names — remove whichever don't apply.
-          path: |
-            client/dist
-            client/build
-          if-no-files-found: warn
-          retention-days: 7
-
-      # ─────────────────────────────────────────
-      # MONOREPO PATH: server
-      # ─────────────────────────────────────────
-      - name: Install server dependencies
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./server
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
-
-      - name: Test server
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./server
-        run: |
-          if npm run | grep -q " test"; then
-            npm run test -- --run
-          else
-            echo "No test script found in server, skipping."
-          fi
-
-      - name: Build server
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./server
-        run: |
-          if npm run | grep -q " build"; then
-            npm run build
-          else
-            echo "No build script found in server, skipping."
-          fi
-
-      - name: List server output (debug)
-        if: steps.detect.outputs.layout == 'monorepo'
-        working-directory: ./server
-        run: ls -la . && (ls -la dist 2>/dev/null || echo "no dist/ here")
-
-      - name: Upload server build artifact
-        if: steps.detect.outputs.layout == 'monorepo'
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-dist
-          path: |
-            server/dist
-            server/build
-          if-no-files-found: warn
-          retention-days: 7
-
-      # ─────────────────────────────────────────
-      # SINGLE PACKAGE.JSON PATH (root)
-      # ─────────────────────────────────────────
-      - name: Install dependencies (root)
-        if: steps.detect.outputs.layout == 'single'
-        run: |
-          if [ -f package-lock.json ]; then npm ci; else npm install; fi
-
-      - name: Test (root)
-        if: steps.detect.outputs.layout == 'single'
-        run: |
-          if npm run | grep -q " test"; then
-            npm run test -- --run
-          else
-            echo "No test script found, skipping."
-          fi
-
-      - name: Build (root)
-        if: steps.detect.outputs.layout == 'single'
-        run: |
-          if npm run | grep -q " build"; then
-            npm run build
-          else
-            echo "No build script found, skipping."
-          fi
-
-      - name: List root output (debug)
-        if: steps.detect.outputs.layout == 'single'
-        run: ls -la .
-
-      - name: Upload build artifact (root)
-        if: steps.detect.outputs.layout == 'single'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output
-          path: |
-            dist
-            build
-          if-no-files-found: warn
-          retention-days: 7
+            - name: Build React App
+              run: npm run build
+              
+            # Upload Build Artifacts
+            - name: Upload Build Artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                name: react-build
+                path: dist
+            - name: Send Email Notification
+              uses: dawidd6/action-send-mail@v6
+              with:
+                server_address: smtp.gmail.com
+                server_port: 465
+                username: ${{secrets.MAIL_USERNAME}}
+                password: ${{secrets.MAIL_PASSWORD}}
+                subject: React App Build Successfully
+                to: ${{secrets.RECEIVER_EMAIL}}
+                from: ${{secrets.MAIL_USERNAME}}
+                body: "Build job of ${{github.repository}} for Branch: ${{ github.ref_name }} completed successfully!"
+                
