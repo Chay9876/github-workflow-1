@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pipenv
+        run: pip install pipenv
+
+      - name: Cache pipenv virtualenv
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/virtualenvs
+          key: pipenv-${{ runner.os }}-${{ hashFiles('Pipfile.lock') }}
+          restore-keys: |
+            pipenv-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pipenv install --dev --deploy
+
+      - name: Lint with flake8
+        run: pipenv run flake8 . --max-line-length=100 --exclude=.venv
+
+      - name: Run tests
+        run: pipenv run pytest -v
