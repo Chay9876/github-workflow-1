@@ -2,48 +2,126 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main, develop]
   pull_request:
-    branches: [ "main" ]
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '20'
 
 jobs:
-  test:
+  # ────────────────────────────────
+  # FRONTEND (client) — install, lint, test, build
+  # ────────────────────────────────
+  client:
+    name: Client - Build & Test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./client
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
-
-      - name: Install pipenv
-        run: pip install pipenv
-
-      - name: Cache pipenv virtualenv
-        uses: actions/cache@v5
-        with:
-          path: ~/.local/share/virtualenvs
-          key: pipenv-${{ runner.os }}-${{ hashFiles('Pipfile.lock') }}
-          restore-keys: |
-            pipenv-${{ runner.os }}-
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
 
       - name: Install dependencies
-        run: pipenv install --dev --skip-lock
+        run: npm ci
 
-      - name: Ensure test tooling is present
-        run: pipenv run pip install --quiet pytest flake8
+      - name: Run tests (Vitest)
+        run: npm run test -- --run
 
-      - name: Lint with flake8
-        run: pipenv run flake8 . --max-line-length=100 --exclude=.venv,.git,__pycache__
-        continue-on-error: true
+      - name: Build
+        run: npm run build
 
-      - name: Run tests
+      - name: Upload client build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: client/dist
+          retention-days: 7
+
+  # ────────────────────────────────
+  # BACKEND (server) — install, lint, test, build
+  # ────────────────────────────────
+  server:
+    name: Server - Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./server
+
+    # Optional: spin up MySQL for integration tests.
+    # Remove this block if your tests don't need a live DB.
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test_db
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: test_db
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Wait for MySQL
         run: |
-          if find . -name "test_*.py" -o -name "*_test.py" | grep -q .; then
-            pipenv run pytest -v
-          else
-            echo "No test files found (test_*.py or *_test.py) — skipping pytest."
-          fi
+          for i in {1..10}; do
+            mysqladmin ping -h127.0.0.1 -uroot -proot --silent && break
+            echo "Waiting for MySQL..."
+            sleep 3
+          done
+
+      - name: Run tests (Vitest)
+        run: npm run test -- --run
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload server build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-dist
+          path: server/dist
+          retention-days: 7
+
+  # ────────────────────────────────
+  # Combine status — useful as a single required check
+  # ────────────────────────────────
+  ci-success:
+    name: CI Success
+    needs: [client, server]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed
+        run: echo "Client and server builds/tests passed."
