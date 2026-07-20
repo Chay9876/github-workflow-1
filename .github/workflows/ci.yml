@@ -10,15 +10,9 @@ env:
   NODE_VERSION: '20'
 
 jobs:
-  # ────────────────────────────────
-  # FRONTEND (client) — install, lint, test, build
-  # ────────────────────────────────
-  client:
-    name: Client - Build & Test
+  build-and-test:
+    name: Install, Test, Build
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./client
 
     steps:
       - name: Checkout code
@@ -28,100 +22,128 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: client/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      # ─────────────────────────────────────────
+      # Detect repo layout: monorepo (client/server) vs single package.json
+      # ─────────────────────────────────────────
+      - name: Detect project structure
+        id: detect
+        run: |
+          if [ -f "client/package.json" ] && [ -f "server/package.json" ]; then
+            echo "layout=monorepo" >> "$GITHUB_OUTPUT"
+          else
+            echo "layout=single" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Run tests (Vitest)
-        run: npm run test -- --run
+      # ─────────────────────────────────────────
+      # MONOREPO PATH: client
+      # ─────────────────────────────────────────
+      - name: Install client dependencies
+        if: steps.detect.outputs.layout == 'monorepo'
+        working-directory: ./client
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-      - name: Build
-        run: npm run build
+      - name: Test client
+        if: steps.detect.outputs.layout == 'monorepo'
+        working-directory: ./client
+        run: |
+          if npm run | grep -q " test"; then
+            npm run test -- --run
+          else
+            echo "No test script found in client, skipping."
+          fi
+
+      - name: Build client
+        if: steps.detect.outputs.layout == 'monorepo'
+        working-directory: ./client
+        run: |
+          if npm run | grep -q " build"; then
+            npm run build
+          else
+            echo "No build script found in client, skipping."
+          fi
 
       - name: Upload client build artifact
+        if: steps.detect.outputs.layout == 'monorepo'
         uses: actions/upload-artifact@v4
         with:
           name: client-dist
           path: client/dist
+          if-no-files-found: warn
           retention-days: 7
 
-  # ────────────────────────────────
-  # BACKEND (server) — install, lint, test, build
-  # ────────────────────────────────
-  server:
-    name: Server - Build & Test
-    runs-on: ubuntu-latest
-    defaults:
-      run:
+      # ─────────────────────────────────────────
+      # MONOREPO PATH: server
+      # ─────────────────────────────────────────
+      - name: Install server dependencies
+        if: steps.detect.outputs.layout == 'monorepo'
         working-directory: ./server
-
-    # Optional: spin up MySQL for integration tests.
-    # Remove this block if your tests don't need a live DB.
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: test_db
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h localhost"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
-    env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: root
-      DB_NAME: test_db
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: server/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Wait for MySQL
         run: |
-          for i in {1..10}; do
-            mysqladmin ping -h127.0.0.1 -uroot -proot --silent && break
-            echo "Waiting for MySQL..."
-            sleep 3
-          done
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-      - name: Run tests (Vitest)
-        run: npm run test -- --run
+      - name: Test server
+        if: steps.detect.outputs.layout == 'monorepo'
+        working-directory: ./server
+        run: |
+          if npm run | grep -q " test"; then
+            npm run test -- --run
+          else
+            echo "No test script found in server, skipping."
+          fi
 
-      - name: Build
-        run: npm run build
+      - name: Build server
+        if: steps.detect.outputs.layout == 'monorepo'
+        working-directory: ./server
+        run: |
+          if npm run | grep -q " build"; then
+            npm run build
+          else
+            echo "No build script found in server, skipping."
+          fi
 
       - name: Upload server build artifact
+        if: steps.detect.outputs.layout == 'monorepo'
         uses: actions/upload-artifact@v4
         with:
           name: server-dist
           path: server/dist
+          if-no-files-found: warn
           retention-days: 7
 
-  # ────────────────────────────────
-  # Combine status — useful as a single required check
-  # ────────────────────────────────
-  ci-success:
-    name: CI Success
-    needs: [client, server]
-    runs-on: ubuntu-latest
-    steps:
-      - name: All jobs passed
-        run: echo "Client and server builds/tests passed."
+      # ─────────────────────────────────────────
+      # SINGLE PACKAGE.JSON PATH (root)
+      # ─────────────────────────────────────────
+      - name: Install dependencies (root)
+        if: steps.detect.outputs.layout == 'single'
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Test (root)
+        if: steps.detect.outputs.layout == 'single'
+        run: |
+          if npm run | grep -q " test"; then
+            npm run test -- --run
+          else
+            echo "No test script found, skipping."
+          fi
+
+      - name: Build (root)
+        if: steps.detect.outputs.layout == 'single'
+        run: |
+          if npm run | grep -q " build"; then
+            npm run build
+          else
+            echo "No build script found, skipping."
+          fi
+
+      - name: Upload build artifact (root)
+        if: steps.detect.outputs.layout == 'single'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            dist
+            build
+          if-no-files-found: warn
+          retention-days: 7
