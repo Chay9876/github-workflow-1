@@ -34,6 +34,7 @@ jobs:
           else
             echo "layout=single" >> "$GITHUB_OUTPUT"
           fi
+          echo "Detected layout: $(cat $GITHUB_OUTPUT | tail -n1)"
 
       # ─────────────────────────────────────────
       # MONOREPO PATH: client
@@ -64,12 +65,25 @@ jobs:
             echo "No build script found in client, skipping."
           fi
 
+      # DEBUG: shows exactly what got produced, and where, in the Actions log.
+      # If the upload step below comes up empty, check this step's output
+      # to see the real folder name and update the `path:` below to match.
+      - name: List client output (debug)
+        if: steps.detect.outputs.layout == 'monorepo'
+        working-directory: ./client
+        run: ls -la . && (ls -la dist 2>/dev/null || echo "no dist/ here")
+
       - name: Upload client build artifact
         if: steps.detect.outputs.layout == 'monorepo'
         uses: actions/upload-artifact@v4
         with:
           name: client-dist
-          path: client/dist
+          # Path is relative to the repo root (GITHUB_WORKSPACE), NOT to
+          # the working-directory used above. Covers the common Vite/CRA
+          # output folder names — remove whichever don't apply.
+          path: |
+            client/dist
+            client/build
           if-no-files-found: warn
           retention-days: 7
 
@@ -102,12 +116,19 @@ jobs:
             echo "No build script found in server, skipping."
           fi
 
+      - name: List server output (debug)
+        if: steps.detect.outputs.layout == 'monorepo'
+        working-directory: ./server
+        run: ls -la . && (ls -la dist 2>/dev/null || echo "no dist/ here")
+
       - name: Upload server build artifact
         if: steps.detect.outputs.layout == 'monorepo'
         uses: actions/upload-artifact@v4
         with:
           name: server-dist
-          path: server/dist
+          path: |
+            server/dist
+            server/build
           if-no-files-found: warn
           retention-days: 7
 
@@ -136,6 +157,10 @@ jobs:
           else
             echo "No build script found, skipping."
           fi
+
+      - name: List root output (debug)
+        if: steps.detect.outputs.layout == 'single'
+        run: ls -la .
 
       - name: Upload build artifact (root)
         if: steps.detect.outputs.layout == 'single'
