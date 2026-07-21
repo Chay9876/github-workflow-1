@@ -21,7 +21,10 @@ jobs:
           cache: npm
 
       - name: Install Dependencies
-        run: npm install
+        run: npm install --verbose
+
+      - name: Verify Dependencies
+        run: npm list vite
 
       - name: Build Project
         run: npm run build
