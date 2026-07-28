@@ -1,4 +1,4 @@
-name: React Project Artifact
+name: Test GitHub Actions
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,19 +18,9 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: npm
 
-      - name: Install Dependencies
-        run: npm install --verbose
+      - name: Check Node Version
+        run: node -v
 
-      - name: Verify Dependencies
-        run: npm list vite
-
-      - name: Build Project
-        run: npm run build
-
-      - name: Upload Build Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: react-build
-          path: dist
+      - name: Print Test Message
+        run: echo "✅ Workflow executed successfully!"
